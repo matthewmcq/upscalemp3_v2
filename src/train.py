@@ -15,7 +15,6 @@ from utils.Pipeline import (
 from utils.config import Config, RetrainConfig, RetrainConfig_flipped
 from model import (
     WaveletUNet,
-    pit_loss,
     gelu,
     DWTLayer,
     IDWTLayer,
@@ -172,7 +171,7 @@ def train_model(clips_dir=None, tfrecords_dir=None, save_directory=None, model=N
             wavelet_family=config.WAVELET_FAMILY
         )
     
-    print("Compiling model with PIT loss...")
+    print("Compiling model...")
     optimizer = tf.keras.optimizers.Adam(learning_rate=config.LEARNING_RATE)
     loss_fn = tf.keras.losses.MeanSquaredError()
     dummy_input = tf.zeros((config.BATCH_SIZE, config.SEGMENT_LENGTH, 1))
