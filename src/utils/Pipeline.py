@@ -213,7 +213,7 @@ class MP3DegradationPipeline:
         
         # Shuffle and batch
         dataset = dataset.shuffle(shuffle_buffer)
-        dataset = dataset.batch(batch_size)
+        dataset = dataset.repeat(100).batch(batch_size)
         
         # Add channel dimension for conv layers
         dataset = dataset.map(

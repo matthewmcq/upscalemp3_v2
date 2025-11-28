@@ -29,7 +29,7 @@ class Config_small: # swapped to 32 filters US 16 DS
     # Mixture generation
     MIN_SOURCES = 1
     MAX_SOURCES = 1 # first curriculum learning
-    NUM_EXAMPLES = BATCH_SIZE * 4200
+    NUM_EXAMPLES = BATCH_SIZE * 4800
     
     
     # Wavelet settings
