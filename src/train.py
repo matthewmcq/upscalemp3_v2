@@ -12,7 +12,7 @@ import pywt
 from utils.Pipeline import (
     MP3DegradationPipeline
 )
-from utils.config import Config, RetrainConfig, RetrainConfig_flipped
+from utils.config import Config, RetrainConfig, Config_small
 from model import (
     WaveletUNet,
     gelu,
@@ -88,10 +88,7 @@ def get_callbacks(save_directory, config):
 def train_model(clips_dir=None, tfrecords_dir=None, save_directory=None, model=None, retrain=False):
     """Main function to run the audio source separation pipeline"""
 
-    if retrain:
-        config = RetrainConfig()
-    else:
-        config = Config()
+    config = Config_small() 
         
     tf.config.optimizer.set_jit(True)
     for device in tf.config.list_physical_devices('GPU'):
