@@ -3,11 +3,11 @@ class Config_small: # swapped to 32 filters US 16 DS
     # Data settings
     DATA_DIR = "data/audio"
     CLIPS_DIR = "data/clips"
-    SAMPLE_RATE = 41000
-    SEGMENT_LENGTH = 41000  # 1 second at 16kHz
+    SAMPLE_RATE = 44100
+    SEGMENT_LENGTH = 44100  # 1 second at 16kHz
     
     # Model settings
-    NUM_COEFFS = 41000  # 1 second at 16kHz
+    NUM_COEFFS = 44100  # 1 second at 16kHz
     WAVELET_DEPTH = 5
     BATCH_SIZE = 16 # 16-32
     CHANNELS = 1  # Mono audio
