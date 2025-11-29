@@ -89,6 +89,9 @@ def train_model(clips_dir=None, tfrecords_dir=None, save_directory=None, model=N
     """Main function to run the audio source separation pipeline"""
 
     config = Config_small() 
+    
+    if retrain:
+        config = RetrainConfig()
         
     tf.config.optimizer.set_jit(True)
     for device in tf.config.list_physical_devices('GPU'):
