@@ -1,4 +1,4 @@
-# upscalemp3_v2 - Wavelet-Based MP3 Audio Enhancement
+# upscalemp3_v2 - Wavelet-Based MP3 Audio Enhancement/Restoration
 
 A deep learning model for removing MP3 compression artifacts and restoring audio quality using a Wavelet U-Net architecture. This is a complete rewrite of the original upscalemp3, replacing the STFT-based approach with wavelets for significantly improved performance.
 
