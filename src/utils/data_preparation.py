@@ -27,7 +27,7 @@ class AudioProcessor:
         """Initialize audio processor with clip settings"""
         self.clip_duration_seconds = clip_duration_seconds
         self.window_overlap_ratio = window_overlap_ratio
-        self.samples_per_clip = int(clip_duration_seconds * 16000)
+        self.samples_per_clip = int(clip_duration_seconds * 44100)
         self.overlap_samples = int(self.samples_per_clip * window_overlap_ratio)
         self.window = windows.hann(self.samples_per_clip)
     
@@ -36,21 +36,49 @@ class AudioProcessor:
         try:
             if str(file_path).lower().endswith('.wav'):
                 sample_rate, audio_array = wavfile.read(str(file_path))
-                if sample_rate != 16000:
-                    print(f"Warning: Audio file {file_path} sample rate is {sample_rate}Hz (expected 16kHz)")
+                if sample_rate != 44100:
+                    print(f"Warning: Audio file {file_path} sample rate is {sample_rate}Hz (expected 44.1kHz)")
+            elif str(file_path).lower().endswith('.mp3'):
+                # Handle MP3 files with pydub
+                print(f"Converting MP3 to WAV for {file_path}")
+                from pydub import AudioSegment
+                
+                # Load MP3 and convert to WAV format in memory
+                audio_segment = AudioSegment.from_mp3(str(file_path))
+                audio_segment = audio_segment.set_frame_rate(44100)  # Resample to 44.1kHz
+                audio_segment = audio_segment.set_channels(1)  # Convert to mono
+                
+                # Get the audio data as numpy array
+                audio_array = np.array(audio_segment.get_array_of_samples()).astype(np.float32)
+                print(f"Audio array shape: {audio_array.shape}, frame rate: {audio_segment.frame_rate}, channels: {audio_segment.channels}")
+                # Normalize based on bit depth
+                if audio_segment.sample_width == 2:  # 16-bit
+                    audio_array = audio_array / 32768.0
+                elif audio_segment.sample_width == 1:  # 8-bit
+                    audio_array = audio_array / 128.0 - 1.0
+                
+                sample_rate = 44100
             else:
+                # Handle other formats with soundfile
                 audio_array, sample_rate = sf.read(str(file_path))
-                if sample_rate != 16000:
-                    print(f"Warning: Audio file {file_path} sample rate is {sample_rate}Hz (expected 16kHz)")
+                
+                # Resample if needed
+                if sample_rate != 44100:
+                    print(f"Resampling from {sample_rate}Hz to 44100Hz for {file_path}")
+                    audio_array = librosa.resample(audio_array.T, orig_sr=sample_rate, target_sr=44100).T
+                    sample_rate = 44100
             
+            # Convert to float32 if needed
             if audio_array.dtype != np.float32:
                 audio_array = audio_array.astype(np.float32)
                 if audio_array.max() > 1.0:
                     audio_array = audio_array / 32768.0
             
+            # Convert to mono if stereo
             if len(audio_array.shape) > 1:
                 audio_array = audio_array.mean(axis=1)
             
+            # Normalize to [-1, 1]
             max_val = np.max(np.abs(audio_array))
             if max_val > 0:
                 audio_array = audio_array / max_val
@@ -104,7 +132,7 @@ class AudioProcessor:
             subfolder = output_dir / f"{hash_value:03d}"
             subfolder.mkdir(exist_ok=True)
             output_path = subfolder / clip_name
-            sf.write(str(output_path), clip, 16000, format='WAV')
+            sf.write(str(output_path), clip, 44100, format='WAV')
 
     def _process_audio_file(self, audio_path):
         """Process a single audio file into a TF Example
@@ -351,77 +379,17 @@ def process_audio_for_prediction(audio_file, clip_duration_seconds=1.0, window_o
     )
     
     audio = processor.load_and_normalize_audio(audio_file)
-    # audio, sr = sf.read(audio_file)
-    # audio = np.mean(audio, axis=1)
-    # audio, sr = librosa.load(audio_file, sr=16000, mono=False)
-    # audio = np.array(audio)
-    # audio = audio[0]
-    # assert audio.shape[0] == 160000
-    # audio, sr = sf.read(audio_file)
 
-    # print(audio_file)
-
-    # audio, sr = sf.read(str(audio_file))
-    # audio = np.mean(audio, axis=1)
-    # audio = audio / np.max(np.abs(audio))
-
-    # if sr != 16000:
-    #     print(f"SR is not 16000: {sr}")
-    #     audio = librosa.resample(audio, sr, 16000)
-    # if audio is None:
-    #     print(f"Error: Failed to load audio file {audio_file}")
-    #     return None, None
     
-    step_size = int(16000 * (1 - window_overlap_ratio))
-    num_clips = max(1, (len(audio) - 16000) // step_size + 1)
-    clips = split_into_clips_new(audio, 16000, step_size, num_clips)
+    step_size = int(44100 * (1 - window_overlap_ratio))
+    num_clips = max(1, (len(audio) - 44100) // step_size + 1)
+    clips = split_into_clips_new(audio, 44100, step_size, num_clips)
     
+    print(f"Processed {len(clips)} clips from audio file {audio_file}")
     
     return clips, audio
     
-    
-    # if isinstance(audio, str):
-    #     audio_data, sr = librosa.load(audio, sr=16000)
-    #     if sr != sample_rate:
-    #         print(f"Warning: Audio sample rate ({sr}) doesn't match expected rate ({sample_rate})")
-    # else:
-    #     audio_data = audio
-    
-    # # convert to mono
-    # if len(audio_data.shape) > 1 and audio_data.shape[1] > 1:
-    #     audio_data = audio_data.mean(axis=1)
-        
-    # # normalize audio
-    # audio_data = audio_data.astype(np.float32)
-    # audio_data = audio_data / np.max(np.abs(audio_data) + 1e-10)
-    
-    
-    # # Calculate clip sizes
-    # samples_per_clip = int(clip_duration_seconds * sample_rate)
-    # step_size = int(samples_per_clip * (1 - window_overlap_ratio))
-    # num_clips = max(1, (len(audio_data) - samples_per_clip) // step_size + 1)
-    
-    # if num_clips == 0:
-    #     padded_audio = np.zeros(samples_per_clip)
-    #     padded_audio[:len(audio_data)] = audio_data
-    #     audio_data = padded_audio
-    #     num_clips = 1
-    
-    # clips = np.zeros((num_clips, samples_per_clip))
-    # for i in range(num_clips):
-    #     start = i * step_size
-    #     end = start + samples_per_clip
-        
-    #     if end > len(audio_data):
-    #         clip = np.zeros(samples_per_clip)
-    #         clip[:len(audio_data) - start] = audio_data[start:]
-    #         clips[i] = clip
-    #     else:
-    #         clips[i] = audio_data[start:end]
-    
-    # return clips, audio_data
-
-def split_into_clips_new(audio, samples_per_clip=16000, overlap_frames=4000, num_clips=None):
+def split_into_clips_new(audio, samples_per_clip=44100, overlap_frames=4410, num_clips=None):
         """Split audio into non-overlapping 1-second clips with light Hann windowing"""
         window = windows.hann(samples_per_clip)
         window = 0.1 * window + 0.9
@@ -458,8 +426,10 @@ def reconstruct_audio_from_clips(clips, clip_duration_seconds=1.0, window_overla
     """
     if clips is None or len(clips) == 0:
         return None
-        
+    
+    print(clips.shape)
     num_clips, samples_per_clip = clips.shape
+    print(f"Reconstructing audio from {num_clips} clips of {samples_per_clip} samples each")
     step_size = int(samples_per_clip * (1 - window_overlap_ratio))
     
     total_length = (num_clips - 1) * step_size + samples_per_clip

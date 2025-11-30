@@ -12,7 +12,7 @@ import pywt
 from utils.Pipeline import (
     MP3DegradationPipeline
 )
-from utils.config import Config, RetrainConfig, Config_small
+from utils.config import Config, RetrainConfig
 from model import (
     WaveletUNet,
     gelu,
@@ -88,7 +88,7 @@ def get_callbacks(save_directory, config):
 def train_model(clips_dir=None, tfrecords_dir=None, save_directory=None, model=None, retrain=False):
     """Main function to run the audio source separation pipeline"""
 
-    config = Config_small() 
+    config = Config() 
     
     if retrain:
         config = RetrainConfig()
@@ -102,17 +102,7 @@ def train_model(clips_dir=None, tfrecords_dir=None, save_directory=None, model=N
             print(f"Error setting memory growth: {e}")  
     
     print("Starting audio source separation pipeline...")
-
-    # if clips_dir and not tfrecords_dir:
-    #     print("Creating TensorFlow dataset for training from WAV files...")
-    #     dataset = create_training_dataset(
-    #         base_dir=config.DATA_DIR,
-    #         clips_dir=clips_dir,
-    #         num_speakers=config.MAX_SOURCES,
-    #         batch_size=config.BATCH_SIZE
-    #     )
-    #     train_dataset = dataset.take(train_steps).repeat()
-    #     val_dataset = dataset.skip(train_steps).take(val_steps).repeat()
+ 
     if tfrecords_dir and not clips_dir:
         print("Creating TensorFlow dataset for training from TFRecords...")
         tfrecord_files = tf.io.gfile.glob(f"{tfrecords_dir}/*.tfrecord")
@@ -128,19 +118,17 @@ def train_model(clips_dir=None, tfrecords_dir=None, save_directory=None, model=N
         val_records = tfrecord_files[-num_val_records:]
         
     
-        # Choose pipeline
-        # Option 1: Real MP3 encoding (more realistic)
         pipeline = MP3DegradationPipeline(mp3_bitrates=[64, 96, 128, 160, 192, 256])
         
         # Create dataset
         train_dataset = pipeline.create_training_dataset(
-            train_records,  # 90% for training
-            batch_size=16
+            train_records,  
+            batch_size=config.BATCH_SIZE
         )
         
         val_dataset = pipeline.create_training_dataset(
-            val_records,  # 10% for validation
-            batch_size=16
+            val_records,  
+            batch_size=config.BATCH_SIZE
         )
 
         print(f"Training dataset ready")
@@ -183,12 +171,6 @@ def train_model(clips_dir=None, tfrecords_dir=None, save_directory=None, model=N
         metrics=['mse'],
         jit_compile=True
     )
-    # else: # getting XLA bullshit errors
-    #     model.compile(
-    #         optimizer=optimizer,
-    #         loss=pit_loss,
-    #         metrics=['mse'],
-    #     )
     
     model.summary()
     

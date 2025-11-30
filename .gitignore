@@ -5,4 +5,5 @@ models/
 *.wav
 tfrecords_44k/
 test_outputs/
+examples/
 *.ipynb
