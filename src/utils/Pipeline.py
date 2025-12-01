@@ -22,9 +22,10 @@ class MP3DegradationPipeline:
     Pipeline that simulates MP3 compression artifacts for training.
     """
     
-    def __init__(self, mp3_bitrates=[24, 32, 64, 96, 128, 160, 192, 256]):
+    def __init__(self, mp3_bitrates=[24, 32, 64, 96, 128]):
         """
         Initialize the MP3 degradation pipeline.
+        Full = [24, 32, 64, 96, 128, 160, 192, 256]
         
         Args:
             mp3_bitrates: List of bitrates to randomly choose from for MP3 encoding.
