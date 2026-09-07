@@ -213,18 +213,18 @@ def separate_audio(model, audio_file, clip_duration_seconds=1.0, window_overlap_
 
 
     
-def generate_prediction(model_dir, model_filename, audio_dir, audio_filename, clip_duration_seconds=1.0, window_overlap_ratio=0.5):
+def generate_prediction(model_dir, model_filename, audio_dir, audio_filename, clip_duration_seconds=1.0, window_overlap_ratio=0.5, output_filename="output.wav", output_dir=None):
     audio_file = os.path.join(audio_dir, audio_filename)
 
-    output_dir = os.path.join(audio_dir, "output")
+    if output_dir is None:
+        output_dir = os.path.join(audio_dir, "output")
     os.makedirs(output_dir, exist_ok=True)
     model = load_saved_model(model_dir, model_filename)
     separated_sources = separate_audio(model, audio_file, clip_duration_seconds=clip_duration_seconds, window_overlap_ratio=window_overlap_ratio)
     
-
     for i, source in enumerate(separated_sources):
         print(f"Writing output {output_dir}")
-        sf.write(os.path.join(output_dir, f"output.wav"), source, 44100)
+        sf.write(os.path.join(output_dir, output_filename), source, 44100)
 
 
 if __name__ == "__main__":

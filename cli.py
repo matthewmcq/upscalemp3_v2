@@ -23,6 +23,11 @@ def main():
         help="Output directory (default: ./output)",
     )
     parser.add_argument(
+        "-f", "--output-filename",
+        default="output.wav",
+        help="Output filename (default: output.wav)",
+    )
+    parser.add_argument(
         "-m", "--model-dir",
         default=str(BASE / "upscalemp3_v2"),
         help="Directory containing model files (default: upscalemp3_v2/)",
@@ -72,9 +77,11 @@ def main():
         audio_filename=audio_filename,
         clip_duration_seconds=args.clip_duration,
         window_overlap_ratio=args.overlap,
+        output_filename=args.output_filename,
+        output_dir=output_dir,
     )
 
-    print(f"\nDone. Output saved to {output_dir}/output.wav")
+    print(f"\nDone. Output saved to {output_dir}/{args.output_filename}")
 
 
 if __name__ == "__main__":
