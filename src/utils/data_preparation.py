@@ -88,7 +88,69 @@ class AudioProcessor:
         except Exception as e:
             print(f"Error processing {file_path}: {e}")
             return None
-    
+
+    def load_and_normalize_audio_stereo(self, file_path):
+        """Load audio file and normalize it, preserving stereo channels."""
+        try:
+            if str(file_path).lower().endswith('.wav'):
+                sample_rate, audio_array = wavfile.read(str(file_path))
+                if sample_rate != 44100:
+                    print(f"Warning: Audio file {file_path} sample rate is {sample_rate}Hz (expected 44.1kHz)")
+            elif str(file_path).lower().endswith('.mp3'):
+                # Handle MP3 files with pydub
+                print(f"Converting MP3 to WAV for {file_path}")
+                from pydub import AudioSegment
+
+                # Load MP3 and convert to WAV format in memory
+                audio_segment = AudioSegment.from_mp3(str(file_path))
+                audio_segment = audio_segment.set_frame_rate(44100)  # Resample to 44.1kHz
+
+                # Get the audio data as numpy array (interleaved for stereo)
+                audio_array = np.array(audio_segment.get_array_of_samples()).astype(np.float32)
+                if audio_segment.channels == 2:
+                    audio_array = audio_array.reshape(-1, 2)
+                # if channels == 1, keep as 1D array
+
+                # Normalize based on bit depth
+                if audio_segment.sample_width == 2:  # 16-bit
+                    audio_array = audio_array / 32768.0
+                elif audio_segment.sample_width == 1:  # 8-bit
+                    audio_array = audio_array / 128.0 - 1.0
+
+                sample_rate = 44100
+            else:
+                # Handle other formats with soundfile
+                audio_array, sample_rate = sf.read(str(file_path))
+
+                # Resample if needed
+                if sample_rate != 44100:
+                    print(f"Resampling from {sample_rate}Hz to 44100Hz for {file_path}")
+                    if len(audio_array.shape) > 1:
+                        audio_array = np.array([
+                            librosa.resample(audio_array[:, i], orig_sr=sample_rate, target_sr=44100)
+                            for i in range(audio_array.shape[1])
+                        ]).T
+                    else:
+                        audio_array = librosa.resample(audio_array, orig_sr=sample_rate, target_sr=44100)
+                    sample_rate = 44100
+
+            # Convert to float32 if needed
+            if audio_array.dtype != np.float32:
+                audio_array = audio_array.astype(np.float32)
+                if np.max(np.abs(audio_array)) > 1.0:
+                    audio_array = audio_array / 32768.0
+
+            # Normalize to [-1, 1]
+            max_val = np.max(np.abs(audio_array))
+            if max_val > 0:
+                audio_array = audio_array / max_val
+
+            return audio_array
+
+        except Exception as e:
+            print(f"Error processing {file_path}: {e}")
+            return None
+
     def split_into_clips(self, audio):
         """Split audio into non-overlapping 1-second clips with light Hann windowing"""
         window = windows.hann(self.samples_per_clip)
@@ -375,42 +437,85 @@ def process_audio_for_prediction(audio_file, clip_duration_seconds=1.0, window_o
     """
     processor = AudioProcessor(
         clip_duration_seconds=clip_duration_seconds,
-        window_overlap_ratio=0.1
+        window_overlap_ratio=window_overlap_ratio
     )
     
     audio = processor.load_and_normalize_audio(audio_file)
 
     
-    step_size = int(44100 * (1 - window_overlap_ratio))
-    num_clips = max(1, (len(audio) - 44100) // step_size + 1)
-    clips = split_into_clips_new(audio, 44100, step_size, num_clips)
+    samples_per_clip = int(clip_duration_seconds * 44100)
+    step_size = int(samples_per_clip * (1 - window_overlap_ratio))
+    num_clips = max(1, (len(audio) - samples_per_clip + step_size - 1) // step_size + 1)
+    clips = split_into_clips_new(audio, samples_per_clip, step_size, num_clips, window_overlap_ratio)
+    
+    print(f"Processed {len(clips)} clips from audio file {audio_file}")
+    
+    return clips, audio
+
+def process_audio_for_prediction_stereo(audio_file, clip_duration_seconds=1.0, window_overlap_ratio=0.25):
+    """
+    Process a single audio file into overlapping clips suitable for model prediction,
+    preserving stereo channels (L/R) for both input and output.
+    The clips are designed to be reconstructed back into the full audio after prediction.
+    
+    Args:
+        audio_file: Path to the input audio file
+        clip_duration_seconds: Duration of each clip in seconds
+        window_overlap_ratio: Overlap ratio between consecutive windows
+        
+    Returns:
+        tuple: (clips, audio)
+            - clips: numpy array of shape (num_clips, samples_per_clip, C) containing the audio clips
+            - audio: numpy array of the original audio of shape (samples,) or (samples, C)
+    """
+    processor = AudioProcessor(
+        clip_duration_seconds=clip_duration_seconds,
+        window_overlap_ratio=window_overlap_ratio
+    )
+    
+    audio = processor.load_and_normalize_audio_stereo(audio_file)
+
+    
+    samples_per_clip = int(clip_duration_seconds * 44100)
+    step_size = int(samples_per_clip * (1 - window_overlap_ratio))
+    num_clips = max(1, (len(audio) - samples_per_clip + step_size - 1) // step_size + 1)
+    clips = split_into_clips_new(audio, samples_per_clip, step_size, num_clips, window_overlap_ratio)
     
     print(f"Processed {len(clips)} clips from audio file {audio_file}")
     
     return clips, audio
     
-def split_into_clips_new(audio, samples_per_clip=44100, overlap_frames=4410, num_clips=None):
-        """Split audio into non-overlapping 1-second clips with light Hann windowing"""
+def split_into_clips_new(audio, samples_per_clip=44100, overlap_frames=4410, num_clips=None, window_overlap_ratio=0.25):
+        """Split audio into overlapping 1-second clips with lifted Hann windowing.
+
+        The window matches the one used in reconstruct_audio_from_clips so that
+        overlap-add yields a smooth, artifact-free reconstruction.
+        Supports mono (1D) and multi-channel (2D) audio.
+        """
         window = windows.hann(samples_per_clip)
-        window = 0.1 * window + 0.9
-        # num_clips = len(audio) // samples_per_clip
+        window = window_overlap_ratio * window + (1 - window_overlap_ratio)
+        is_multi_channel = len(audio.shape) > 1
+        if is_multi_channel:
+            window = window[:, None]
         clips = []
         
         for i in range(num_clips):
             start = i * overlap_frames
             end = start + samples_per_clip
             clip = audio[start:end]
+            if len(clip) < samples_per_clip:
+                if is_multi_channel:
+                    clip = np.pad(clip, ((0, samples_per_clip - len(clip)), (0, 0)))
+                else:
+                    clip = np.pad(clip, (0, samples_per_clip - len(clip)))
             clip = clip * window
             clips.append(clip)
         
-        if len(audio) % samples_per_clip > 0:
-            start = num_clips * samples_per_clip
-            remaining = audio[start:]
-            clip = np.pad(remaining, (0, samples_per_clip - len(remaining)))
-            clip = clip * window
-            clips.append(clip)
-        
-        return np.array(clips) if clips else np.zeros((1, samples_per_clip))
+        if clips:
+            return np.array(clips)
+        if is_multi_channel:
+            return np.zeros((1, samples_per_clip, audio.shape[1]))
+        return np.zeros((1, samples_per_clip))
 
 def reconstruct_audio_from_clips(clips, clip_duration_seconds=1.0, window_overlap_ratio=0.25):
     """
@@ -428,22 +533,30 @@ def reconstruct_audio_from_clips(clips, clip_duration_seconds=1.0, window_overla
         return None
     
     print(clips.shape)
-    num_clips, samples_per_clip = clips.shape
+    num_clips, samples_per_clip = clips.shape[0], clips.shape[1]
+    is_multi_channel = len(clips.shape) > 2
     print(f"Reconstructing audio from {num_clips} clips of {samples_per_clip} samples each")
     step_size = int(samples_per_clip * (1 - window_overlap_ratio))
     
     total_length = (num_clips - 1) * step_size + samples_per_clip
-    
-    output = np.zeros(total_length)
-    normalization = np.zeros(total_length)
+
+    if is_multi_channel:
+        num_channels = clips.shape[2]
+        output = np.zeros((total_length, num_channels))
+        normalization = np.zeros((total_length, num_channels))
+    else:
+        output = np.zeros(total_length)
+        normalization = np.zeros(total_length)
     
     window = windows.hann(samples_per_clip)
     window = window_overlap_ratio * window + (1 - window_overlap_ratio)
+    if is_multi_channel:
+        window = window[:, None]
     
     for i in range(num_clips):
         start = i * step_size
         end = start + samples_per_clip
-        output[start:end] += clips[i] * window
+        output[start:end] += clips[i]
         normalization[start:end] += window
     
     mask = normalization > 1e-10
