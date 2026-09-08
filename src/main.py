@@ -26,7 +26,7 @@ from model import (
     UpsamplingLayer,
     GatedSkipConnection,
 )
-from utils.data_preparation import process_audio_for_prediction, reconstruct_audio_from_clips
+from utils.data_preparation import process_audio_for_prediction_stereo, reconstruct_audio_from_clips
 from pydub import AudioSegment
 
 config = RetrainConfig()
@@ -172,50 +172,59 @@ def plot_model(history, config, save_directory):
 
 
 
-def separate_audio(model, audio, clip_duration_seconds=1.0, window_overlap_ratio=0.25):
-    """Separate audio into sources using overlapping windows for better reconstruction.
+def separate_audio(model, audio_file, clip_duration_seconds=1.0, window_overlap_ratio=0.5):
+    """Enhance audio using overlapping windows for better reconstruction.
+    Stereo sources are supported: each channel is enhanced independently
+    and recombined, preserving the stereo image of the original.
     
     Args:
-        model: The trained separation model
-        audio: Input audio array
+        model: The trained enhancement model
+        audio_file: Path to the input audio file
         clip_duration_seconds: Duration of each clip in seconds
         window_overlap_ratio: Overlap ratio between consecutive windows
         
     Returns:
-        list: List of separated source arrays
+        list: List of enhanced source arrays
     """
-    clips, _ = process_audio_for_prediction(audio, clip_duration_seconds, window_overlap_ratio)
+    clips, audio = process_audio_for_prediction_stereo(audio_file, clip_duration_seconds, window_overlap_ratio)
     
-    separated_sources = np.zeros((len(clips), clips.shape[1]))
+    is_stereo = len(audio.shape) > 1
+    num_clips = clips.shape[0]
+    num_channels = clips.shape[2] if is_stereo else 1
+    
+    separated_sources = np.zeros(clips.shape)
     
     for i, clip in enumerate(clips):
-        
-        clip_input = clip.reshape(1, -1, 1)
-        
-        predictions = model.predict(clip_input)
-        
-        separated_sources[i, :] = predictions[0, :, 0]
+        for c in range(num_channels):
+            clip_input = (clip[:, c] if is_stereo else clip).reshape(1, -1, 1)
+            predictions = model.predict(clip_input, verbose=0)
+            if is_stereo:
+                separated_sources[i, :, c] = predictions[0, :, 0]
+            else:
+                separated_sources[i, :] = predictions[0, :, 0]
     
-    reconstructed_sources = [
-        reconstruct_audio_from_clips(separated_sources, clip_duration_seconds, window_overlap_ratio)
-    ]
+    reconstructed = reconstruct_audio_from_clips(separated_sources, clip_duration_seconds, window_overlap_ratio)
+    reconstructed = reconstructed[:len(audio)]
     
-    return reconstructed_sources
+    if is_stereo:
+        reconstructed = reconstructed.reshape(len(audio), num_channels)
+    
+    return [reconstructed]
 
 
     
-def generate_prediction(model_dir, model_filename, audio_dir, audio_filename, clip_duration_seconds=1.0, window_overlap_ratio=0.5):
+def generate_prediction(model_dir, model_filename, audio_dir, audio_filename, clip_duration_seconds=1.0, window_overlap_ratio=0.5, output_filename="output.wav", output_dir=None):
     audio_file = os.path.join(audio_dir, audio_filename)
 
-    output_dir = os.path.join(audio_dir, "output")
+    if output_dir is None:
+        output_dir = os.path.join(audio_dir, "output")
     os.makedirs(output_dir, exist_ok=True)
     model = load_saved_model(model_dir, model_filename)
-    separated_sources = separate_audio(model, audio_file, clip_duration_seconds=1.0, window_overlap_ratio=0.25)
+    separated_sources = separate_audio(model, audio_file, clip_duration_seconds=clip_duration_seconds, window_overlap_ratio=window_overlap_ratio)
     
-
     for i, source in enumerate(separated_sources):
         print(f"Writing output {output_dir}")
-        sf.write(os.path.join(output_dir, f"output.wav"), source, 44100)
+        sf.write(os.path.join(output_dir, output_filename), source, 44100)
 
 
 if __name__ == "__main__":
